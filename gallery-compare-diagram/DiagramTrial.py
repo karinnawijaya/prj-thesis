@@ -189,3 +189,56 @@ def generate_diagram_cytoscape(
     diagram = _parse_json_strict(raw)
     validate_cytoscape_diagram(diagram)
     return diagram
+
+# ---------------- Streamlit UI ----------------
+
+st.set_page_config(page_title="GalleryCompare — Diagram Generator", layout="wide")
+st.title("GalleryCompare — Diagram Generator (MVP)")
+st.caption("Paste a dataset-based summary, select two artworks by title, and generate Cytoscape-ready JSON.")
+
+with st.sidebar:
+    st.subheader("Settings")
+    csv_path = st.text_input("CSV path", value=CSV_PATH_DEFAULT)
+    model = st.text_input("LLM model", value="gpt-4.1-mini")
+    st.write("API key must be in environment: `OPENAI_API_KEY`")
+
+try:
+    df = load_metadata(csv_path)
+except Exception as e:
+    st.error(f"Failed to load CSV: {e}")
+    st.stop()
+
+titles = df["Title"].fillna("").astype(str).tolist()
+
+col1, col2 = st.columns(2)
+
+with col1:
+    title_a = st.selectbox("Artwork A (Title)", options=titles, index=0)
+with col2:
+    title_b = st.selectbox("Artwork B (Title)", options=titles, index=1 if len(titles) > 1 else 0)
+
+summary = st.text_area(
+    "Comparison Summary (paste here)",
+    height=180,
+    placeholder="Both artworks ... [broad context]. [specific relation] ...",
+)
+
+generate = st.button("Generate Diagram JSON", type="primary")
+
+if generate:
+    with st.spinner("Generating diagram..."):
+        try:
+            diagram = generate_diagram_json(df, title_a, title_b, summary, model=model)
+        except Exception as e:
+            st.error(str(e))
+        else:
+            st.success("Diagram generated!")
+            st.subheader("Cytoscape JSON")
+            st.json(diagram)
+
+            st.download_button(
+                label="Download JSON",
+                data=json.dumps(diagram, ensure_ascii=False, indent=2),
+                file_name="diagram.json",
+                mime="application/json",
+            )
