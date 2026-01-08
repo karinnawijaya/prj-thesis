@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 
 
-CSV_PATH_DEFAULT = "../Painting_Metadata_251030.csv"
+CSV_PATH_DEFAULT = "Painting_Metadata_251030.csv"
 
 DIAGRAM_PROMPT_TEMPLATE = """\
 You convert an artwork comparison into a non-sequential relational diagram.
