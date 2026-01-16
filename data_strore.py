@@ -1,4 +1,4 @@
-# data_store.py to select two painting and load csv
+# data_store.py to select two painting and load csvcd
 from __future__ import annotations
 import pandas as pd
 from typing import Dict, Any, Tuple, List
