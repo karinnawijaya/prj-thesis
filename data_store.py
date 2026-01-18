@@ -8,14 +8,16 @@ import pandas as pd
 
 def load_paintings(csv_path: str) -> pd.DataFrame:
     df = pd.read_csv(csv_path)
+    df.columns = df.columns.str.strip()
     return df
 
 
 def guess_title_column(df: pd.DataFrame) -> str:
-    # Prefer common names
-    for c in ["title", "Title", "artwork_title", "Artwork title", "Artwork Title", "painting_title"]:
-        if c in df.columns:
-            return c
+    # Prefer common names, but match case-insensitively
+    normalized_columns = {str(col).strip().lower(): col for col in df.columns}
+    for c in ["title", "artwork_title", "artwork title", "painting_title"]:
+        if c in normalized_columns:
+            return normalized_columns[c]
     # Fall back to first column
     return df.columns[0]
 
@@ -73,4 +75,5 @@ def get_two_paintings_by_title(
 def list_titles(df: pd.DataFrame, title_col: str) -> List[str]:
     titles = df[title_col].dropna()
     titles = titles.astype(str).str.strip()
-    return [title for title in titles.tolist() if title and title.lower() != "nan"]
+    filtered = [title for title in titles.tolist() if title and title.lower() not in {"nan", "none"}]
+    return list(dict.fromkeys(filtered))
