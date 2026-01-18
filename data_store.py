@@ -16,15 +16,47 @@ def guess_title_column(df: pd.DataFrame) -> str:
     return df.columns[0]
 
 def row_to_meta(row: pd.Series) -> Dict[str, Any]:
-    """
-    Pass through all non-null fields to the LLM so it can stay dataset-grounded.
-    """
+   import pandas as pd
+import numpy as np
+from typing import Any, Dict
+
+def _to_jsonable(v: Any) -> Any:
+    if v is None:
+        return None
+    # pandas missing values
+    try:
+        if pd.isna(v):
+            return None
+    except Exception:
+        pass
+
+    # numpy -> python
+    if isinstance(v, np.integer):
+        return int(v)
+    if isinstance(v, np.floating):
+        return float(v)
+    if isinstance(v, np.bool_):
+        return bool(v)
+
+    # pandas Timestamp -> string
+    if isinstance(v, pd.Timestamp):
+        return v.isoformat()
+
+    # already ok
+    if isinstance(v, (str, int, float, bool)):
+        return v
+
+    # fallback
+    return str(v)
+
+def row_to_meta(row: pd.Series) -> Dict[str, Any]:
     meta: Dict[str, Any] = {}
     for k in row.index:
-        v = row[k]
-        if pd.notna(v):
-            meta[str(k)] = v
+        v2 = _to_jsonable(row[k])
+        if v2 is not None and v2 != "":
+            meta[str(k)] = v2
     return meta
+
 
 def get_two_paintings_by_title(df: pd.DataFrame, title_col: str, a_title: str, b_title: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     a_row = df[df[title_col].astype(str) == str(a_title)].iloc[0]
