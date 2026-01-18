@@ -1,13 +1,15 @@
-# data_store.py to select two painting and load csvcd
 from __future__ import annotations
+
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
 
+
 def load_paintings(csv_path: str) -> pd.DataFrame:
     df = pd.read_csv(csv_path)
     return df
+
 
 def guess_title_column(df: pd.DataFrame) -> str:
     # Prefer common names
@@ -16,6 +18,7 @@ def guess_title_column(df: pd.DataFrame) -> str:
             return c
     # Fall back to first column
     return df.columns[0]
+
 
 def _to_jsonable(v: Any) -> Any:
     if v is None:
@@ -46,6 +49,7 @@ def _to_jsonable(v: Any) -> Any:
     # fallback
     return str(v)
 
+
 def row_to_meta(row: pd.Series) -> Dict[str, Any]:
     meta: Dict[str, Any] = {}
     for k in row.index:
@@ -55,9 +59,18 @@ def row_to_meta(row: pd.Series) -> Dict[str, Any]:
     return meta
 
 
-def get_two_paintings_by_title(df: pd.DataFrame, title_col: str, a_title: str, b_title: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+def get_two_paintings_by_title(
+    df: pd.DataFrame,
+    title_col: str,
+    a_title: str,
+    b_title: str,
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     a_row = df[df[title_col].astype(str) == str(a_title)].iloc[0]
     b_row = df[df[title_col].astype(str) == str(b_title)].iloc[0]
- titles = df[title_col].dropna()
+    return row_to_meta(a_row), row_to_meta(b_row)
+
+
+def list_titles(df: pd.DataFrame, title_col: str) -> List[str]:
+    titles = df[title_col].dropna()
     titles = titles.astype(str).str.strip()
     return [title for title in titles.tolist() if title and title.lower() != "nan"]
