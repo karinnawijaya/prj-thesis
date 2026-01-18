@@ -48,10 +48,10 @@ def generate_summary_and_spec(art_a_meta: Dict[str, Any], art_b_meta: Dict[str, 
 You will be given dataset metadata for two artworks.
 
 Artwork A metadata (dataset fields):
-{json.dumps(art_a_meta, ensure_ascii=False, indent=2)}
+{json.dumps(art_a_meta, ensure_ascii=False, indent=2, default=str)
 
 Artwork B metadata (dataset fields):
-{json.dumps(art_b_meta, ensure_ascii=False, indent=2)}
+{json.dumps(art_b_meta, ensure_ascii=False, indent=2, default=str)
 
 Output format rules:
 - Return VALID JSON ONLY (no markdown).
