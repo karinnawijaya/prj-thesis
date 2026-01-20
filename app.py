@@ -9,6 +9,7 @@ from data_store import (
     guess_title_column,
     load_paintings,
 )
+from diagram_builder import build_readable_diagrams, _make_cytoscape
 from diagram_builder import build_readable_diagrams, cytoscape_to_ascii
 from llm_gallerycompare import generate_summary_and_spec
 
@@ -130,7 +131,9 @@ if st.button("2) Translate to JSON diagram (readable nodes)"):
         st.warning("Please generate the overview summary first.")
     else:
         # your existing logic to translate to JSON
-        diagram_json, cytoscape_json = build_readable_diagrams(comparison_spec, summary_text)
+        diagram_json = build_readable_diagrams(comparison_spec, summary_text)
+        cytoscape_json = _make_cytoscape(diagram_json)
+
         st.session_state["diagram_json"] = diagram_json
         st.session_state["cytoscape_json"] = cytoscape_json
         st.session_state["cyto_elements"] = cytoscape_json.get("elements", {})
