@@ -72,18 +72,26 @@ Rules:
     )
     return json.loads(resp.output_text)
 
-def build_readable_diagrams(comparison_spec: Dict[str, Any], summary_text: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """ 
-    Returns: (diagram_json, cytoscape_json)
-    Diagram tweak implemented:
-      - AB bridge node at Level 1 (readable sentence)
-      - explicit A<->B edge
-      - L2-L4 are one-sentence nodes (more elaborate and clear)
-      - top-to-bottom direction metadata + cytoscape breadthfirst layout roots=["AB"]
+def build_readable_diagrams(comparison_spec):
     """
-    art_a = comparison_spec.get("artwork_a", {})
-    art_b = comparison_spec.get("artwork_b", {})
+    Builds readable JSON-style diagram nodes from a comparison spec.
 
-    sentences = _generate_level_sentences(comparison_spec, summary_text)
+    L2-L4 are one-sentence nodes (more elaborate and clear).
+    L5-L7 are bullet points.
+    """
 
-    nodes: List[Dict[str, Any]] = [
+    diagrams = []
+
+    for section in comparison_spec.get("sections", []):
+        title = section.get("title", "Untitled Section")
+        bullets = section.get("bullets", [])
+
+        node = {
+            "title": title,
+            "summary": section.get("summary", ""),
+            "bullets": bullets,
+        }
+
+        diagrams.append(node)
+
+    return diagrams
