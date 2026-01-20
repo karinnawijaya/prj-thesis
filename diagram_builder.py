@@ -27,32 +27,35 @@ def _artwork_label(prefix: str, art: Dict[str, Any]) -> str:
     return f"{prefix} — {title} ({artist}, {year})"
 
 
-def _node(node_id: str, label: str, node_type: str, level: int | None = None) -> Dict[str, Any]:
-    n: Dict[str, Any] = {"id": node_id, "type": node_type, "label": label}
-@@ -45,50 +45,117 @@ def _make_cytoscape(diagram_json: Dict[str, Any]) -> Dict[str, Any]:
-        if "level" in n:
-            data["level"] = n["level"]
-        cy_nodes.append({"data": data})
+from typing import Dict, Any, List
 
-    cy_edges = []
-    for idx, e in enumerate(diagram_json.get("edges", []), start=1):
-        cy_edges.append(
-            {
-                "data": {
-                    "id": f"e{idx}",
-                    "source": e["source"],
-                    "target": e["target"],
-                    "relation": e.get("relation", ""),
-                    "label": e.get("label", ""),
-                }
+def _make_cytoscape(diagram_json: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Convert internal diagram JSON into Cytoscape elements.
+    """
+    elements = {"nodes": [], "edges": []}
+
+    for node in diagram_json.get("nodes", []):
+        elements["nodes"].append({
+            "data": {
+                "id": node.get("id"),
+                "label": node.get("label", node.get("id")),
+                **{k: v for k, v in node.items() if k not in {"id", "label"}}
             }
-        )
+        })
 
-    # Top-to-bottom layout: root at AB (Level 1 bridge)
-    return {
-        "elements": {"nodes": cy_nodes, "edges": cy_edges},
-        "layout": {"name": "breadthfirst", "directed": True, "roots": ["AB"], "spacingFactor": 1.25},
-    }
+    for edge in diagram_json.get("edges", []):
+        elements["edges"].append({
+            "data": {
+                "id": f'{edge.get("source")}->{edge.get("target")}',
+                "source": edge.get("source"),
+                "target": edge.get("target"),
+                "label": edge.get("label", "")
+            }
+        })
+
+    return elements
+
 
 
 def cytoscape_to_ascii(elements: Dict[str, Any], root_id: str | None = None) -> str:
