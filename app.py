@@ -92,3 +92,8 @@ st.divider()
 
 if st.button("2) Translate to JSON diagram (readable nodes)"):
     if not comparison_spec or not summary_text.strip():
+        st.warning("Please generate the overview summary first.")
+    else:
+        # your existing logic to translate to JSON
+        diagram = build_readable_diagrams(comparison_spec)
+        st.json(diagram)
