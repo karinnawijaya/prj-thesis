@@ -1,5 +1,6 @@
 # app.py for Streamlit UI
 import os
+
 import streamlit as st
 
 from data_store import (
@@ -8,8 +9,8 @@ from data_store import (
     guess_title_column,
     load_paintings,
 )
-from llm_gallerycompare import generate_summary_and_spec
 from diagram_builder import build_readable_diagrams
+from llm_gallerycompare import generate_summary_and_spec
 
 st.set_page_config(page_title="ArtWeave → Diagram", layout="wide")
 st.title("ArtWeave → Summary → Diagram JSON")
@@ -26,13 +27,18 @@ title_col = guess_title_column(df)
 painting_options = build_painting_options(df, title_col, "assets/paintings")
 
 
-def render_painting_selector(label: str, options: list[dict[str, str]], state_key: str, columns: int = 4) -> str:
+def render_painting_selector(
+    label: str,
+    options: list[dict[str, str]],
+    state_key: str,
+    columns: int = 4,
+) -> str:
     # Streamlit's selectbox can't render images in options; use a card grid instead.
     st.subheader(label)
     if not options:
         st.warning("No paintings available to select.")
         return ""
-    if state_key not in st.session_state and options:
+    if state_key not in st.session_state:
         st.session_state[state_key] = options[0]["title"]
 
     selected_title = st.session_state.get(state_key, "")
@@ -54,6 +60,7 @@ def render_painting_selector(label: str, options: list[dict[str, str]], state_ke
                 if st.button(button_label, key=f"{state_key}-{row_idx}-{col_idx}"):
                     st.session_state[state_key] = option["title"]
     return st.session_state.get(state_key, "")
+
 
 c1, c2 = st.columns(2)
 with c1:
