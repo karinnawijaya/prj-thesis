@@ -15,6 +15,14 @@ from llm_gallerycompare import generate_summary_and_spec
 st.set_page_config(page_title="ArtWeave → Diagram", layout="wide")
 st.title("ArtWeave → Summary → Diagram JSON")
 
+ALLOWED_TITLES = [
+    "Dancers Practicing at the Barre",
+    "Madame Manet (Suzanne Leenhoff, 1829–1906) at Bellevue",
+    "The Garden of the Tuileries on a Winter Afternoon",
+    "By the Seashore",
+    "The Bridge at Villeneuve-la-Garenne",
+]
+
 if not os.getenv("OPENAI_API_KEY") and "OPENAI_API_KEY" in st.secrets:
     os.environ["OPENAI_API_KEY"] = str(st.secrets["OPENAI_API_KEY"]).strip()
 
@@ -24,7 +32,16 @@ if not os.getenv("OPENAI_API_KEY"):
 # Load dataset
 df = load_paintings("Painting_Metadata_251030.csv")
 title_col = guess_title_column(df)
-painting_options = build_painting_options(df, title_col, "assets/paintings")
+all_painting_options = build_painting_options(df, title_col, "assets/paintings")
+options_by_title = {option["title"]: option for option in all_painting_options}
+missing_titles = [title for title in ALLOWED_TITLES if title not in options_by_title]
+if missing_titles:
+    st.error(
+        "Some required paintings are missing from the dataset or assets: "
+        + ", ".join(missing_titles)
+    )
+    st.stop()
+painting_options = [options_by_title[title] for title in ALLOWED_TITLES]
 
 
 def render_painting_selector(
@@ -71,6 +88,24 @@ with c2:
 st.divider()
 
 if st.button("1) Generate overview summary", type="primary"):
+    missing_selection = [
+        title for title in (a_title, b_title) if title not in ALLOWED_TITLES
+    ]
+    if missing_selection:
+        st.error(
+            "Please choose a painting from the allowed list: "
+            + ", ".join(missing_selection)
+        )
+        st.stop()
+    if (
+        df[df[title_col].astype(str) == str(a_title)].empty
+        or df[df[title_col].astype(str) == str(b_title)].empty
+    ):
+        st.error(
+            "One or more selected paintings could not be found in the dataset. "
+            "Please choose a different painting."
+        )
+        st.stop()
     a_meta, b_meta = get_two_paintings_by_title(df, title_col, a_title, b_title)
     out = generate_summary_and_spec(a_meta, b_meta)
     st.session_state["summary_text"] = out["summary_text"]
@@ -96,4 +131,3 @@ if st.button("2) Translate to JSON diagram (readable nodes)"):
     else:
         # your existing logic to translate to JSON
         diagram = build_readable_diagrams(comparison_spec)
-        st.json(diagram)
