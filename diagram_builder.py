@@ -73,7 +73,7 @@ Rules:
     return json.loads(resp.output_text)
 
 def build_readable_diagrams(comparison_spec: Dict[str, Any], summary_text: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """
+    """ 
     Returns: (diagram_json, cytoscape_json)
     Diagram tweak implemented:
       - AB bridge node at Level 1 (readable sentence)
