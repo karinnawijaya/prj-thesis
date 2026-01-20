@@ -2,12 +2,20 @@
 import os
 import streamlit as st
 
-from data_store import load_paintings, guess_title_column, list_titles, get_two_paintings_by_title
+from data_store import (
+    build_painting_options,
+    get_two_paintings_by_title,
+    guess_title_column,
+    load_paintings,
+)
 from llm_gallerycompare import generate_summary_and_spec
 from diagram_builder import build_readable_diagrams
 
 st.set_page_config(page_title="ArtWeave → Diagram", layout="wide")
 st.title("ArtWeave → Summary → Diagram JSON")
+
+if not os.getenv("OPENAI_API_KEY") and "OPENAI_API_KEY" in st.secrets:
+    os.environ["OPENAI_API_KEY"] = str(st.secrets["OPENAI_API_KEY"]).strip()
 
 if not os.getenv("OPENAI_API_KEY"):
     st.warning("OPENAI_API_KEY not found. Set it to enable summary/diagram generation.")
@@ -15,13 +23,43 @@ if not os.getenv("OPENAI_API_KEY"):
 # Load dataset
 df = load_paintings("Painting_Metadata_251030.csv")
 title_col = guess_title_column(df)
-titles = list_titles(df, title_col)
+painting_options = build_painting_options(df, title_col, "assets/paintings")
+
+
+def render_painting_selector(label: str, options: list[dict[str, str]], state_key: str, columns: int = 4) -> str:
+    # Streamlit's selectbox can't render images in options; use a card grid instead.
+    st.subheader(label)
+    if not options:
+        st.warning("No paintings available to select.")
+        return ""
+    if state_key not in st.session_state and options:
+        st.session_state[state_key] = options[0]["title"]
+
+    selected_title = st.session_state.get(state_key, "")
+    st.caption(f"Selected: {selected_title}" if selected_title else "Selected: none")
+
+    rows = [options[i : i + columns] for i in range(0, len(options), columns)]
+    for row_idx, row in enumerate(rows):
+        cols = st.columns(columns)
+        for col_idx, option in enumerate(row):
+            with cols[col_idx]:
+                image_path = option["image_path"]
+                if os.path.exists(image_path):
+                    st.image(image_path, use_column_width=True)
+                else:
+                    st.info("Image not found", icon="🖼️")
+                st.caption(option["title"])
+                is_selected = option["title"] == selected_title
+                button_label = "Selected" if is_selected else "Select"
+                if st.button(button_label, key=f"{state_key}-{row_idx}-{col_idx}"):
+                    st.session_state[state_key] = option["title"]
+    return st.session_state.get(state_key, "")
 
 c1, c2 = st.columns(2)
 with c1:
-    a_title = st.selectbox("Choose painting A", titles, index=0)
+    a_title = render_painting_selector("Choose painting A", painting_options, "painting_a_title")
 with c2:
-    b_title = st.selectbox("Choose painting B", titles, index=1 if len(titles) > 1 else 0)
+    b_title = render_painting_selector("Choose painting B", painting_options, "painting_b_title")
 
 st.divider()
 
@@ -47,23 +85,3 @@ st.divider()
 
 if st.button("2) Translate to JSON diagram (readable nodes)"):
     if not comparison_spec or not summary_text.strip():
-        st.error("Please generate the summary first.")
-    else:
-        diagram_json, cytoscape_json = build_readable_diagrams(comparison_spec, summary_text)
-        st.session_state["diagram_json"] = diagram_json
-        st.session_state["cytoscape_json"] = cytoscape_json
-
-col3, col4 = st.columns(2)
-with col3:
-    st.subheader("Diagram JSON")
-    if "diagram_json" in st.session_state:
-        st.json(st.session_state["diagram_json"])
-    else:
-        st.info("Generate the diagram to see JSON.")
-
-with col4:
-    st.subheader("Cytoscape JSON")
-    if "cytoscape_json" in st.session_state:
-        st.json(st.session_state["cytoscape_json"])
-    else:
-        st.info("Generate the diagram to see Cytoscape JSON.")

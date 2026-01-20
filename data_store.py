@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
+import re
 
 
 def load_paintings(csv_path: str) -> pd.DataFrame:
@@ -77,3 +78,21 @@ def list_titles(df: pd.DataFrame, title_col: str) -> List[str]:
     titles = titles.astype(str).str.strip()
     filtered = [title for title in titles.tolist() if title and title.lower() not in {"nan", "none"}]
     return list(dict.fromkeys(filtered))
+
+
+def _slugify_title(title: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", title.strip().lower()).strip("-")
+    return slug or "unknown"
+
+
+def build_painting_options(df: pd.DataFrame, title_col: str, image_root: str) -> List[Dict[str, str]]:
+    options: List[Dict[str, str]] = []
+    for title in list_titles(df, title_col):
+        slug = _slugify_title(title)
+        options.append(
+            {
+                "title": title,
+                "image_path": f"{image_root}/{slug}.jpg",
+            }
+        )
+    return options

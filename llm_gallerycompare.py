@@ -1,10 +1,15 @@
 # llm_gallerycompare.py to generate summary (string) and structured spec (JSON)
 from __future__ import annotations
-import os, json
+import json
+import os
 from typing import Dict, Any
 from openai import OpenAI
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+def _get_openai_client() -> OpenAI:
+    api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY is not set. Add it to your environment or Streamlit secrets.")
+    return OpenAI(api_key=api_key)
 
 SYSTEM_PROMPT = """GalleryCompare analyzes and compares two artworks using the provided dataset.
 It identifies both broad contextual links (movement, era, location) and specific relational ties
@@ -30,16 +35,7 @@ def generate_summary_and_spec(art_a_meta: Dict[str, Any], art_b_meta: Dict[str, 
             "artwork_b": {"title": "", "artist": "", "year": ""},
             "broad_context": {
                 "type": "movement|era|location|mixed|unknown",
-                "value": "",
-                "evidence_fields": [],
-                "notes": ""
-            },
-            "specific_relation": {
-                "type": "ownership|collaboration|influence|shared_subject|shared_exhibition|personal_relationship|shared_location|unknown",
-                "claim": "",
-                "evidence_fields": [],
-                "missing_fields_used": [],
-                "notes": ""
+@@ -43,35 +48,36 @@ def generate_summary_and_spec(art_a_meta: Dict[str, Any], art_b_meta: Dict[str,
             }
         }
     }
@@ -65,6 +61,7 @@ Comparison logic:
 - If you cannot identify a specific relation, set specific_relation.type="unknown" and explain in notes.
 """
 
+    client = _get_openai_client()
     resp = client.responses.create(
         model="gpt-4.1-mini",
         input=[

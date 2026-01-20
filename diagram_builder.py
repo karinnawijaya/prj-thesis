@@ -1,10 +1,15 @@
 # diagram_builder.py to create readable diagram and Cytoscape JSON
 from __future__ import annotations
-import os, json
+import json
+import os
 from typing import Any, Dict, List, Tuple
 from openai import OpenAI
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+def _get_openai_client() -> OpenAI:
+    api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY is not set. Add it to your environment or Streamlit secrets.")
+    return OpenAI(api_key=api_key)
 
 DIAGRAM_SENTENCE_SYSTEM = """You write concise, highly readable, factual linking sentences for diagram nodes.
 Use ONLY the provided comparison_spec + summary_text.
@@ -30,30 +35,7 @@ def _make_cytoscape(diagram_json: Dict[str, Any]) -> Dict[str, Any]:
     for n in diagram_json.get("nodes", []):
         data = {"id": n["id"], "label": n.get("label", ""), "type": n.get("type", "")}
         if "level" in n:
-            data["level"] = n["level"]
-        cy_nodes.append({"data": data})
-
-    cy_edges = []
-    for idx, e in enumerate(diagram_json.get("edges", []), start=1):
-        cy_edges.append({
-            "data": {
-                "id": f"e{idx}",
-                "source": e["source"],
-                "target": e["target"],
-                "relation": e.get("relation", ""),
-                "label": e.get("label", "")
-            }
-        })
-
-    # Top-to-bottom layout: root at AB (Level 1 bridge)
-    return {
-        "elements": {"nodes": cy_nodes, "edges": cy_edges},
-        "layout": {"name": "breadthfirst", "directed": True, "roots": ["AB"], "spacingFactor": 1.25}
-    }
-
-def _generate_level_sentences(comparison_spec: Dict[str, Any], summary_text: str) -> Dict[str, str]:
-    """
-    Returns one-sentence labels for AB (L1), L2, L3, L4.
+@@ -57,50 +62,51 @@ def _generate_level_sentences(comparison_spec: Dict[str, Any], summary_text: str
     AB must be concrete and explicit (like your Monet sentence).
     """
     a = comparison_spec.get("artwork_a", {})
@@ -79,6 +61,7 @@ Rules:
 - No invented facts. If something is uncertain, phrase carefully and stay within the provided inputs.
 """
 
+    client = _get_openai_client()
     resp = client.responses.create(
         model="gpt-4.1-mini",
         input=[
@@ -104,38 +87,3 @@ def build_readable_diagrams(comparison_spec: Dict[str, Any], summary_text: str) 
     sentences = _generate_level_sentences(comparison_spec, summary_text)
 
     nodes: List[Dict[str, Any]] = [
-        _node("A", _artwork_label("Artwork A", art_a), "artwork"),
-        _node("B", _artwork_label("Artwork B", art_b), "artwork"),
-        _node("AB", sentences.get("AB", "").strip(), "connection", level=1),
-        _node("L2", sentences.get("L2", "").strip(), "level", level=2),
-        _node("L3", sentences.get("L3", "").strip(), "level", level=3),
-    ]
-
-    # L4 optional
-    l4 = (sentences.get("L4") or "").strip()
-    if l4:
-        nodes.append(_node("L4", l4, "level", level=4))
-
-    # Edges (with explicit A ↔ B)
-    edges: List[Dict[str, Any]] = [
-        _edge("A", "AB", "direct", "Artwork A supports the core link"),
-        _edge("B", "AB", "direct", "Artwork B supports the core link"),
-        _edge("A", "B", "direct_comparison", "Artwork A and Artwork B are compared through this shared connection"),
-        _edge("AB", "L2", "interpretive", "The core link connects to a shared theme"),
-        _edge("A", "L2", "interpretive", "Artwork A expresses the shared theme"),
-        _edge("B", "L2", "interpretive", "Artwork B expresses the shared theme"),
-        _edge("L2", "L3", "contextual", "The shared theme is supported by shared networks/context"),
-    ]
-
-    if any(n["id"] == "L4" for n in nodes):
-        edges.append(_edge("L3", "L4", "contextual", "This context sits within the broader art-historical framework"))
-
-    diagram_json: Dict[str, Any] = {
-        "direction": "top-to-bottom",
-        "nodes": nodes,
-        "edges": edges,
-        "layout_hint": "Place AB (Level 1) at the top center; place Artwork A left and Artwork B right beneath it; stack Levels 2–4 downward in the center; keep the A↔B edge as a cross-connection."
-    }
-
-    cytoscape_json = _make_cytoscape(diagram_json)
-    return diagram_json, cytoscape_json
