@@ -78,7 +78,7 @@ def build_readable_diagrams(comparison_spec: Dict[str, Any], summary_text: str) 
     Diagram tweak implemented:
       - AB bridge node at Level 1 (readable sentence)
       - explicit A<->B edge
-      - L2–L4 are one-sentence nodes (more elaborate and clear)
+      - L2-L4 are one-sentence nodes (more elaborate and clear)
       - top-to-bottom direction metadata + cytoscape breadthfirst layout roots=["AB"]
     """
     art_a = comparison_spec.get("artwork_a", {})
