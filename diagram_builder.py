@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 
 from openai import OpenAI
 
@@ -29,19 +29,7 @@ def _artwork_label(prefix: str, art: Dict[str, Any]) -> str:
 
 def _node(node_id: str, label: str, node_type: str, level: int | None = None) -> Dict[str, Any]:
     n: Dict[str, Any] = {"id": node_id, "type": node_type, "label": label}
-    if level is not None:
-        n["level"] = level
-    return n
-
-
-def _edge(source: str, target: str, relation: str, label: str) -> Dict[str, Any]:
-    return {"source": source, "target": target, "relation": relation, "label": label}
-
-
-def _make_cytoscape(diagram_json: Dict[str, Any]) -> Dict[str, Any]:
-    cy_nodes = []
-    for n in diagram_json.get("nodes", []):
-        data = {"id": n["id"], "label": n.get("label", ""), "type": n.get("type", "")}
+@@ -45,50 +45,117 @@ def _make_cytoscape(diagram_json: Dict[str, Any]) -> Dict[str, Any]:
         if "level" in n:
             data["level"] = n["level"]
         cy_nodes.append({"data": data})
@@ -65,6 +53,73 @@ def _make_cytoscape(diagram_json: Dict[str, Any]) -> Dict[str, Any]:
         "elements": {"nodes": cy_nodes, "edges": cy_edges},
         "layout": {"name": "breadthfirst", "directed": True, "roots": ["AB"], "spacingFactor": 1.25},
     }
+
+
+def cytoscape_to_ascii(elements: Dict[str, Any], root_id: str | None = None) -> str:
+    nodes = elements.get("nodes", []) if isinstance(elements, dict) else []
+    edges = elements.get("edges", []) if isinstance(elements, dict) else []
+
+    node_ids: List[str] = []
+    labels: Dict[str, str] = {}
+    for node in nodes:
+        data = node.get("data", {}) if isinstance(node, dict) else {}
+        node_id = str(data.get("id", ""))
+        if not node_id:
+            continue
+        node_ids.append(node_id)
+        labels[node_id] = str(data.get("label") or node_id)
+
+    adjacency: Dict[str, List[str]] = {node_id: [] for node_id in node_ids}
+    indegree: Dict[str, int] = {node_id: 0 for node_id in node_ids}
+    for edge in edges:
+        data = edge.get("data", {}) if isinstance(edge, dict) else {}
+        source = str(data.get("source", ""))
+        target = str(data.get("target", ""))
+        if not source or not target:
+            continue
+        if source not in adjacency:
+            adjacency[source] = []
+        adjacency[source].append(target)
+        if target in indegree:
+            indegree[target] += 1
+        else:
+            indegree[target] = 1
+        labels.setdefault(source, source)
+        labels.setdefault(target, target)
+
+    root = None
+    if root_id and root_id in labels:
+        root = root_id
+    if root is None:
+        for node_id in node_ids:
+            if indegree.get(node_id, 0) == 0:
+                root = node_id
+                break
+    if root is None and node_ids:
+        root = node_ids[0]
+
+    if not root:
+        return ""
+
+    def sorted_children(children: Iterable[str]) -> List[str]:
+        return sorted(children, key=lambda child: labels.get(child, child).lower())
+
+    lines: List[str] = []
+
+    def walk(node_id: str, depth: int, path: set[str]) -> None:
+        label = labels.get(node_id, node_id)
+        indent = "  " * depth
+        if node_id in path:
+            lines.append(f"{indent}{label} (cycle)")
+            return
+        lines.append(f"{indent}{label}")
+        next_path = set(path)
+        next_path.add(node_id)
+        for child in sorted_children(adjacency.get(node_id, [])):
+            walk(child, depth + 1, next_path)
+
+    walk(root, 0, set())
+    return "\n".join(lines)
 
 
 def _generate_level_sentences(comparison_spec: Dict[str, Any], summary_text: str) -> Dict[str, str]:
@@ -92,46 +147,7 @@ Rules:
 
     client = _get_openai_client()
     resp = client.responses.create(
-        model="gpt-4.1-mini",
-        input=[
-            {"role": "system", "content": DIAGRAM_SENTENCE_SYSTEM},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=0.25,
-    )
-    return json.loads(resp.output_text)
-
-
-def build_readable_diagrams(
-    comparison_spec: Dict[str, Any],
-    summary_text: str,
-) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """
-    Returns: (diagram_json, cytoscape_json)
-    Diagram tweak implemented:
-      - AB bridge node at Level 1 (readable sentence)
-      - explicit A<->B edge
-      - L2–L4 are one-sentence nodes (more elaborate and clear)
-      - top-to-bottom direction metadata + cytoscape breadthfirst layout roots=["AB"]
-    """
-    art_a = comparison_spec.get("artwork_a", {})
-    art_b = comparison_spec.get("artwork_b", {})
-
-    sentences = _generate_level_sentences(comparison_spec, summary_text)
-
-    nodes: List[Dict[str, Any]] = [
-        _node("A", _artwork_label("Artwork A", art_a), "artwork"),
-        _node("B", _artwork_label("Artwork B", art_b), "artwork"),
-        _node("AB", sentences.get("AB", "").strip(), "connection", level=1),
-        _node("L2", sentences.get("L2", "").strip(), "level", level=2),
-        _node("L3", sentences.get("L3", "").strip(), "level", level=3),
-    ]
-
-    # L4 optional
-    l4 = (sentences.get("L4") or "").strip()
-    if l4:
-        nodes.append(_node("L4", l4, "level", level=4))
-
+@@ -135,26 +202,44 @@ def build_readable_diagrams(
     # Edges (with explicit A ↔ B)
     edges: List[Dict[str, Any]] = [
         _edge("A", "AB", "direct", "Artwork A supports the core link"),
@@ -158,3 +174,21 @@ def build_readable_diagrams(
 
     cytoscape_json = _make_cytoscape(diagram_json)
     return diagram_json, cytoscape_json
+
+
+if __name__ == "__main__":
+    sample_elements = {
+        "nodes": [
+            {"data": {"id": "root", "label": "Root"}},
+            {"data": {"id": "child-a", "label": "Child A"}},
+            {"data": {"id": "child-b", "label": "Child B"}},
+            {"data": {"id": "leaf", "label": "Leaf"}},
+        ],
+        "edges": [
+            {"data": {"source": "root", "target": "child-a"}},
+            {"data": {"source": "root", "target": "child-b"}},
+            {"data": {"source": "child-a", "target": "leaf"}},
+            {"data": {"source": "leaf", "target": "root"}},
+        ],
+    }
+    print(cytoscape_to_ascii(sample_elements))

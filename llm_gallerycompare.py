@@ -35,9 +35,9 @@ def generate_summary_and_spec(art_a_meta: Dict[str, Any], art_b_meta: Dict[str, 
     # Schema: summary string for UI + structured spec for backend diagram logic
     schema_hint = {
         "summary_text": (
-            "**Overview**\n- Artwork A: [title], [artist], [year]\n"
+            "Overview\n- Artwork A: [title], [artist], [year]\n"
             "- Artwork B: [title], [artist], [year]\n\n"
-            "**Comparison Summary**\n<one paragraph>"
+            "Comparison Summary\n<one paragraph>"
         ),
         "comparison_spec": {
             "artwork_a": {"title": "", "artist": "", "year": ""},

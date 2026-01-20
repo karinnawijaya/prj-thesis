@@ -9,7 +9,7 @@ from data_store import (
     guess_title_column,
     load_paintings,
 )
-from diagram_builder import build_readable_diagrams
+from diagram_builder import build_readable_diagrams, cytoscape_to_ascii
 from llm_gallerycompare import generate_summary_and_spec
 
 st.set_page_config(page_title="ArtWeave → Diagram", layout="wide")
@@ -130,4 +130,32 @@ if st.button("2) Translate to JSON diagram (readable nodes)"):
         st.warning("Please generate the overview summary first.")
     else:
         # your existing logic to translate to JSON
-        diagram = build_readable_diagrams(comparison_spec)
+        diagram_json, cytoscape_json = build_readable_diagrams(comparison_spec, summary_text)
+        st.session_state["diagram_json"] = diagram_json
+        st.session_state["cytoscape_json"] = cytoscape_json
+        st.session_state["cyto_elements"] = cytoscape_json.get("elements", {})
+        st.session_state["ascii_diagram"] = cytoscape_to_ascii(
+            st.session_state["cyto_elements"]
+        )
+
+diagram_json = st.session_state.get("diagram_json")
+cytoscape_json = st.session_state.get("cytoscape_json")
+cyto_elements = st.session_state.get("cyto_elements")
+ascii_diagram = st.session_state.get("ascii_diagram")
+
+if diagram_json:
+    st.json(diagram_json)
+else:
+    st.info("Generate the readable diagram JSON first.")
+
+if cytoscape_json:
+    st.subheader("Cytoscape JSON (elements + layout)")
+    st.json(cytoscape_json)
+else:
+    st.info("Generate the Cytoscape JSON first.")
+
+st.subheader("Diagram Structure Summary (in text form)")
+if ascii_diagram:
+    st.code(ascii_diagram, language="text")
+else:
+    st.warning("Generate the diagram first to see the text summary.")
