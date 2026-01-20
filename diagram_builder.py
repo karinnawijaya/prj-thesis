@@ -150,7 +150,7 @@ Rules:
 
     client = _get_openai_client()
     resp = client.responses.create(
-@@ -135,26 +202,44 @@ def build_readable_diagrams(
+135,26 202,44 def build_readable_diagrams(
     # Edges (with explicit A ↔ B)
     edges: List[Dict[str, Any]] = [
         _edge("A", "AB", "direct", "Artwork A supports the core link"),
