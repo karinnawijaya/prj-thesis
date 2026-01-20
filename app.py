@@ -6,8 +6,8 @@ from data_store import load_paintings, guess_title_column, list_titles, get_two_
 from llm_gallerycompare import generate_summary_and_spec
 from diagram_builder import build_readable_diagrams
 
-st.set_page_config(page_title="GalleryCompare → Diagram", layout="wide")
-st.title("GalleryCompare → Summary → Diagram JSON")
+st.set_page_config(page_title="ArtWeave → Diagram", layout="wide")
+st.title("ArtWeave → Summary → Diagram JSON")
 
 if not os.getenv("OPENAI_API_KEY"):
     st.warning("OPENAI_API_KEY not found. Set it to enable summary/diagram generation.")
