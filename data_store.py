@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
 
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import re
@@ -85,14 +86,29 @@ def _slugify_title(title: str) -> str:
     return slug or "unknown"
 
 
+def _build_image_index(image_root: str) -> Dict[str, str]:
+    root = Path(image_root)
+    if not root.exists():
+        return {}
+    index: Dict[str, str] = {}
+    for item in root.iterdir():
+        if not item.is_file():
+            continue
+        slug = _slugify_title(item.stem)
+        index.setdefault(slug, str(item))
+    return index
+
+
 def build_painting_options(df: pd.DataFrame, title_col: str, image_root: str) -> List[Dict[str, str]]:
+    image_index = _build_image_index(image_root)
     options: List[Dict[str, str]] = []
     for title in list_titles(df, title_col):
         slug = _slugify_title(title)
+        image_path = image_index.get(slug, f"{image_root}/{slug}.jpg")
         options.append(
             {
                 "title": title,
-                "image_path": f"{image_root}/{slug}.jpg",
+                "image_path": image_path,
             }
         )
     return options
