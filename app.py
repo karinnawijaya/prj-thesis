@@ -14,7 +14,7 @@ from diagram_builder import build_readable_diagrams, cytoscape_to_ascii
 from llm_gallerycompare import generate_summary_and_spec
 
 st.set_page_config(page_title="ArtWeave → Diagram", layout="wide")
-st.title("ArtWeave → Summary → Diagram JSON")
+st.title("ArtWeave")
 
 ALLOWED_TITLES = [
     "Dancers Practicing at the Barre",
