@@ -1,4 +1,1 @@
-#read me file
-
-#Gallery
-#Compare
+ArtWeave is a system for art museum interaction. 
