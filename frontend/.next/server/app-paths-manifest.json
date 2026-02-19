@@ -1,0 +1,9 @@
+{
+  "/page": "app/page.js",
+  "/intro/page": "app/intro/page.js",
+  "/option/page": "app/option/page.js",
+  "/api/metadata/route": "app/api/metadata/route.js",
+  "/sets/page": "app/sets/page.js",
+  "/sets/[setId]/page": "app/sets/[setId]/page.js",
+  "/compare/page": "app/compare/page.js"
+}

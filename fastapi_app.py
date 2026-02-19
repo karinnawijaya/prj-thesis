@@ -1,6 +1,7 @@
 import csv
 import hashlib
 import json
+import logging
 import os
 import threading
 import uuid
@@ -11,7 +12,15 @@ from typing import Any, Dict, List, Optional
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
+
+from diagram_utils import (
+    DiagramPayload,
+    build_deterministic_diagram,
+    build_fallback_diagram,
+    parse_diagram_payload,
+    repair_diagram_json,
+)
 
 try:
     from openai import OpenAI
@@ -19,11 +28,15 @@ except ImportError:  # pragma: no cover - optional for local runs without OpenAI
     OpenAI = None
 
 
-DATASET_VERSION = "2026-01-26_v1"
+DATASET_VERSION = "2026-02-19_v10"
 DATASET_FILE = "Painting_Metadata_260127.csv"
-PAINTINGS_DIR = Path("assets/paintings")
+# Images live under the Next.js frontend assets folder.
+PAINTINGS_DIR = Path("frontend/assets/paintings")
 CACHE_DIR = Path("cache")
 ALLOWED_SETS = {"A", "B"}
+
+logger = logging.getLogger("artweave")
+logging.basicConfig(level=logging.INFO)
 
 
 @dataclass
@@ -34,6 +47,7 @@ class Painting:
     year: int
     image_filename: str
     set_name: str
+    metadata: Dict[str, Any]
 
     def as_payload(self) -> Dict[str, Any]:
         return {
@@ -58,7 +72,7 @@ class CompareStartResponse(BaseModel):
 class CompareStatusResponse(BaseModel):
     status: str
     summary_markdown: Optional[str] = None
-    diagram: Optional[Dict[str, Any]] = None
+    diagram: Optional[DiagramPayload] = None
 
 
 class CompareJob:
@@ -66,7 +80,7 @@ class CompareJob:
         self.compare_id = compare_id
         self.status = "processing"
         self.summary_markdown: Optional[str] = None
-        self.diagram: Optional[Dict[str, Any]] = None
+        self.diagram: Optional[DiagramPayload] = None
 
     def as_response(self) -> CompareStatusResponse:
         return CompareStatusResponse(
@@ -105,21 +119,38 @@ def _load_paintings() -> None:
         reader = csv.DictReader(handle)
         entries: Dict[str, List[Painting]] = {"A": [], "B": []}
         for row in reader:
-            set_name = (row.get("set") or "").strip()
+            normalized_row: Dict[str, Any] = {}
+            normalized_lower: Dict[str, Any] = {}
+            for key, value in row.items():
+                cleaned_key = (key or "").strip()
+                if not cleaned_key:
+                    continue
+                if isinstance(value, str):
+                    cleaned_value = value.strip()
+                    if cleaned_value == "":
+                        continue
+                    normalized_row[cleaned_key] = cleaned_value
+                    normalized_lower[cleaned_key.lower()] = cleaned_value
+                elif value is not None:
+                    normalized_row[cleaned_key] = value
+                    normalized_lower[cleaned_key.lower()] = value
+
+            set_name = (normalized_lower.get("set") or "").strip()
             if set_name not in ALLOWED_SETS:
                 continue
-            year_value = row.get("year") or "0"
+            year_value = normalized_lower.get("year") or "0"
             try:
                 year = int(year_value)
             except ValueError:
                 year = 0
             painting = Painting(
-                id=(row.get("id") or "").strip(),
-                title=(row.get("title") or "").strip(),
-                artist=(row.get("artist") or "").strip(),
+                id=(normalized_lower.get("id") or "").strip(),
+                title=(normalized_lower.get("title") or "").strip(),
+                artist=(normalized_lower.get("artist") or "").strip(),
                 year=year,
-                image_filename=(row.get("image_filename") or "").strip(),
+                image_filename=(normalized_lower.get("image_filename") or "").strip(),
                 set_name=set_name,
+                metadata=normalized_row,
             )
             if painting.id:
                 entries[set_name].append(painting)
@@ -171,10 +202,55 @@ def _get_openai_client() -> OpenAI:
     return OpenAI(api_key=api_key)
 
 
+def _format_metadata(meta: Dict[str, Any]) -> str:
+    ordered_keys = [
+        "Artwork Location",
+        "Artist Location",
+        "Medium",
+        "Classification",
+        "Art Movement",
+        "Composition",
+        "Color Palette",
+        "History",
+        "Narrative",
+        "Symbolism",
+        "Patron",
+        "Subject",
+        "Art Education",
+        "Influenced by",
+        "Influenced",
+        "Links",
+    ]
+    lines: List[str] = []
+    for key in ordered_keys:
+        value = meta.get(key)
+        if value:
+            lines.append(f"{key}: {value}")
+    return "\n".join(lines) if lines else "No additional metadata."
+
+
 def _generate_summary(client: OpenAI, left: Painting, right: Painting) -> str:
+
     prompt = (
-        "Write a concise comparison summary of the two paintings. "
-        "Focus on subject matter, style, technique, color, and mood."
+        "ArtWeave - Concise Context + Focused Relation\n\n"
+        "Purpose:\n"
+        "ArtWeave analyzes and compares two artworks using the provided dataset. "
+        "It identifies both broad contextual links (e.g., movement, period, or location) "
+        "and specific relational ties (e.g., artist relationship, ownership, or exhibition history).\n\n"
+        "Guidelines:\n"
+        "- Keep the broad context brief and use the specific connection as the central insight.\n"
+        "- All information must be factual and dataset-based — no assumptions or invented context.\n"
+        "- If the dataset lacks a field, acknowledge the absence and use the nearest relevant one "
+        "(e.g., if ownership data is missing, reference exhibition or location link).\n"
+        "- Do NOT repeat placeholders like [title] or [artist]. Always fill with actual values.\n"
+        "- In the Comparison Summary, refer to artworks by their titles (not 'Artwork A/B').\n\n"
+        "Output Format (exact):\n"
+        "**Overview**\n"
+        "- Artwork A: <title>, <artist>, <year>\n"
+        "- Artwork B: <title>, <artist>, <year>\n\n"
+        "**Comparison Summary**\n"
+        "Both artworks <broad context: movement/era/location>. "
+        "<Specific connection highlighting relation or shared circumstance>."
     )
     response = client.responses.create(
         model="gpt-4o-mini",
@@ -182,13 +258,24 @@ def _generate_summary(client: OpenAI, left: Painting, right: Painting) -> str:
         input=[
             {
                 "role": "system",
-                "content": "You are an art historian assistant.",
+                "content": (
+                    "You are ArtWeave, an art historian assistant that only uses the provided "
+                    "dataset fields. Do not invent facts; if a field is missing, say so explicitly. "
+                    "Never output placeholder brackets like [title]."
+                ),
             },
             {
                 "role": "user",
                 "content": (
-                    f"Painting A: {left.title} by {left.artist} ({left.year}).\n"
-                    f"Painting B: {right.title} by {right.artist} ({right.year}).\n"
+                    "Use only the provided fields.\n\n"
+                    f"Artwork A title: {left.title}\n"
+                    f"Artwork A artist: {left.artist}\n"
+                    f"Artwork A year: {left.year}\n"
+                    f"Artwork A metadata:\n{_format_metadata(left.metadata)}\n\n"
+                    f"Artwork B title: {right.title}\n"
+                    f"Artwork B artist: {right.artist}\n"
+                    f"Artwork B year: {right.year}\n"
+                    f"Artwork B metadata:\n{_format_metadata(right.metadata)}\n\n"
                     f"{prompt}"
                 ),
             },
@@ -197,32 +284,45 @@ def _generate_summary(client: OpenAI, left: Painting, right: Painting) -> str:
     return response.output_text.strip()
 
 
-def _generate_diagram(client: OpenAI, left: Painting, right: Painting) -> Dict[str, Any]:
-    prompt = (
-        "Return Cytoscape-compatible JSON with elements and layout. "
-        "Include nodes for each painting and edges describing key contrasts."
-    )
-    response = client.responses.create(
-        model="gpt-4o-mini",
-        temperature=0.2,
-        input=[
-            {
-                "role": "system",
-                "content": (
-                    "You output only valid JSON with keys 'elements' and 'layout'."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Painting A: {left.title} by {left.artist} ({left.year}).\n"
-                    f"Painting B: {right.title} by {right.artist} ({right.year}).\n"
-                    f"{prompt}"
-                ),
-            },
-        ],
-    )
-    return json.loads(response.output_text)
+def _generate_diagram(
+    client: OpenAI, left: Painting, right: Painting, summary_text: str
+) -> DiagramPayload:
+    movement_a = (left.metadata.get("Art Movement") or "").strip()
+    movement_b = (right.metadata.get("Art Movement") or "").strip()
+    movement: Optional[str] = None
+    if movement_a and movement_b and movement_a.lower() == movement_b.lower():
+        movement = movement_a
+    elif movement_a and movement_a.lower() in summary_text.lower():
+        movement = movement_a
+    elif movement_b and movement_b.lower() in summary_text.lower():
+        movement = movement_b
+
+    artwork_a = {
+        "title": left.title,
+        "artist": left.artist,
+        "year": left.year,
+        **left.metadata,
+    }
+    artwork_b = {
+        "title": right.title,
+        "artist": right.artist,
+        "year": right.year,
+        **right.metadata,
+    }
+
+    try:
+        diagram = build_deterministic_diagram(
+            summary=summary_text,
+            artwork_a=artwork_a,
+            artwork_b=artwork_b,
+            movement=movement,
+        )
+        return diagram
+    except (ValidationError, ValueError) as exc:
+        logger.warning("Deterministic diagram failed, using fallback: %s", exc)
+        artwork_a_label = f"Artwork A — {left.title}, {left.artist}, {left.year}"
+        artwork_b_label = f"Artwork B — {right.title}, {right.artist}, {right.year}"
+        return build_fallback_diagram(artwork_a_label, artwork_b_label)
 
 
 def _run_compare_job(compare_id: str, set_name: str, left_id: str, right_id: str) -> None:
@@ -232,12 +332,20 @@ def _run_compare_job(compare_id: str, set_name: str, left_id: str, right_id: str
     client = _get_openai_client()
 
     summary = _generate_summary(client, left, right)
+    logger.info("Summary generated for %s vs %s", left.id, right.id)
     with _jobs_lock:
         job = _jobs[compare_id]
         job.summary_markdown = summary
         job.status = "summary_ready"
 
-    diagram = _generate_diagram(client, left, right)
+    diagram = _generate_diagram(client, left, right, summary)
+    logger.info(
+        "Diagram generated for %s vs %s (nodes=%s edges=%s)",
+        left.id,
+        right.id,
+        len(diagram.nodes),
+        len(diagram.edges),
+    )
     with _jobs_lock:
         job = _jobs[compare_id]
         job.diagram = diagram
@@ -249,7 +357,7 @@ def _run_compare_job(compare_id: str, set_name: str, left_id: str, right_id: str
         cache_path,
         {
             "summary_markdown": summary,
-            "diagram": diagram,
+            "diagram": diagram.model_dump(),
         },
     )
 
@@ -293,12 +401,17 @@ def start_compare(
     job = CompareJob(compare_id)
 
     if cached_payload:
-        job.summary_markdown = cached_payload.get("summary_markdown")
-        job.diagram = cached_payload.get("diagram")
-        job.status = "done"
-        with _jobs_lock:
-            _jobs[compare_id] = job
-        return CompareStartResponse(compare_id=compare_id)
+        cached_diagram = cached_payload.get("diagram")
+        if cached_diagram:
+            try:
+                job.summary_markdown = cached_payload.get("summary_markdown")
+                job.diagram = DiagramPayload.model_validate(cached_diagram)
+                job.status = "done"
+                with _jobs_lock:
+                    _jobs[compare_id] = job
+                return CompareStartResponse(compare_id=compare_id)
+            except (ValidationError, ValueError) as exc:
+                logger.warning("Cached diagram invalid, regenerating: %s", exc)
 
     with _jobs_lock:
         _jobs[compare_id] = job
